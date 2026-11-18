@@ -1,0 +1,60 @@
+name: Probe Apple containers
+
+# Experiment: can a GitHub-hosted macOS runner run Apple's `container` CLI?
+on:
+  push:
+    branches:
+      - ci-probe-apple-containers
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: "Probe on ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-26
+          - macos-26-xlarge
+
+    steps:
+    - name: Machine info
+      run: |
+        sw_vers
+        uname -m
+        sysctl hw.model hw.memsize hw.ncpu
+        # kern.hv_support=1: the hypervisor framework is available
+        sysctl kern.hv_support || true
+        # kern.hv_vmm_present=1: this machine is itself a VM
+        sysctl kern.hv_vmm_present || true
+
+    - name: Install container
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release download --repo apple/container --pattern '*installer-signed.pkg' --dir "$RUNNER_TEMP"
+        sudo installer -pkg "$RUNNER_TEMP"/container-*-installer-signed.pkg -target /
+        container --version
+
+    - name: Start the container services
+      run: container system start --enable-kernel-install --timeout 300
+
+    - name: Run a container
+      run: |
+        container run --rm docker.io/library/alpine:latest echo "hello from a container"
+
+    - name: Run Elasticsearch with 2g of memory (smoke test)
+      run: |
+        container run -d --name es-probe -m 2g -e discovery.type=single-node \
+          -e xpack.security.enabled=false -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
+          -p 127.0.0.1:9200:9200 docker.elastic.co/elasticsearch/elasticsearch:9.5.6
+        for i in $(seq 1 60); do
+          curl -s --fail http://127.0.0.1:9200 && exit 0
+          sleep 5
+        done
+        container logs es-probe | tail -50
+        exit 1
