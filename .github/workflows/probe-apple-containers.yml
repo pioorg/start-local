@@ -11,15 +11,9 @@ permissions:
 
 jobs:
   probe:
-    name: "Probe on ${{ matrix.os }}"
-    runs-on: ${{ matrix.os }}
+    name: "Probe on macos-26"
+    runs-on: macos-26
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - macos-26
-          - macos-26-xlarge
 
     steps:
     - name: Machine info
